@@ -1,0 +1,595 @@
+{
+  "id": "aiLeadTriage01",
+  "name": "AI Lead Triage",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lead-intake",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "a1",
+      "name": "Lead Intake (Webhook)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "6b1c3f0e-2a4d-4c8e-9a51-7d1f0c2b9e11"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Accepts a website form / email-parser payload and normalises it.\nreturn $input.all().map((item) => {\n  const b = item.json.body ?? item.json;\n  const clean = (v) => (typeof v === 'string' ? v.trim() : '');\n  const email = clean(b.email).toLowerCase();\n  return {\n    json: {\n      lead_id: 'lead_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),\n      received_at: new Date().toISOString(),\n      name: clean(b.name) || 'there',\n      email,\n      company: clean(b.company),\n      source: clean(b.source) || 'webhook',\n      message: clean(b.message).slice(0, 4000),\n      valid: /.+@.+\\..+/.test(email) && clean(b.message).length > 0,\n    },\n  };\n});"
+      },
+      "id": "a2",
+      "name": "Normalize Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a3",
+      "name": "Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        440,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"ok\": false, \"error\": \"email and message are required\" } }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "a4",
+      "name": "Reject Invalid",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        660,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "text": "=From: {{ $json.name }} <{{ $json.email }}>\nCompany: {{ $json.company || \"not given\" }}\nSource: {{ $json.source }}\n\nMessage:\n{{ $json.message }}",
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"type\": \"object\",\n  \"properties\": {\n    \"intent\": {\n      \"type\": \"string\",\n      \"enum\": [\n        \"sales_inquiry\",\n        \"support_request\",\n        \"partnership\",\n        \"job_application\",\n        \"spam\",\n        \"other\"\n      ],\n      \"description\": \"Primary reason the person is reaching out\"\n    },\n    \"urgency\": {\n      \"type\": \"string\",\n      \"enum\": [\n        \"high\",\n        \"medium\",\n        \"low\"\n      ]\n    },\n    \"budget_usd\": {\n      \"type\": [\n        \"number\",\n        \"null\"\n      ],\n      \"description\": \"Budget in USD if stated or clearly implied, otherwise null\"\n    },\n    \"timeline\": {\n      \"type\": \"string\",\n      \"description\": \"Requested timeline, or \\\"unspecified\\\"\"\n    },\n    \"company_size\": {\n      \"type\": \"string\",\n      \"enum\": [\n        \"solo\",\n        \"small\",\n        \"mid_market\",\n        \"enterprise\",\n        \"unknown\"\n      ]\n    },\n    \"use_case\": {\n      \"type\": \"string\",\n      \"description\": \"What they want built or solved, in under 15 words\"\n    },\n    \"summary\": {\n      \"type\": \"string\",\n      \"description\": \"One-sentence summary for a sales rep\"\n    },\n    \"suggested_reply\": {\n      \"type\": \"string\",\n      \"description\": \"A short, friendly first reply (max 80 words)\"\n    }\n  },\n  \"required\": [\n    \"intent\",\n    \"urgency\",\n    \"budget_usd\",\n    \"timeline\",\n    \"company_size\",\n    \"use_case\",\n    \"summary\",\n    \"suggested_reply\"\n  ]\n}",
+        "options": {
+          "systemPromptTemplate": "You are a lead-qualification assistant for an AI consultancy that builds AI agents, RAG chatbots and document-automation pipelines.\nExtract the requested fields from the inbound message. Rules:\n- Only use facts present in the message; never invent a budget. Convert other currencies to approximate USD.\n- \"spam\" = marketing blasts, SEO/backlink offers, crypto, or irrelevant mass mail.\n- urgency is \"high\" when the sender names a deadline within ~4 weeks or describes a blocking problem.\n- suggested_reply must be addressed to the sender by first name and ask one clarifying question."
+        }
+      },
+      "id": "a5",
+      "name": "AI: Qualify Lead",
+      "type": "@n8n/n8n-nodes-langchain.informationExtractor",
+      "typeVersion": 1.2,
+      "position": [
+        660,
+        -20
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-3.8-flash",
+        "options": {
+          "temperature": 0
+        }
+      },
+      "id": "a6",
+      "name": "Gemini Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.2,
+      "position": [
+        640,
+        200
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "gemini-api",
+          "name": "Google Gemini API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const INTENT = { sales_inquiry: 40, partnership: 25, other: 5, support_request: 0, job_application: 0, spam: -100 };\nconst URGENCY = { high: 20, medium: 10, low: 0 };\nconst SIZE = { enterprise: 20, mid_market: 15, small: 10, solo: 5, unknown: 5 };\n\nreturn $input.all().map((item, i) => {\n  const lead = $('Normalize Input').all()[i].json;\n  const ai = item.json.output;\n  const budget = typeof ai.budget_usd === 'number' ? ai.budget_usd : null;\n  const budgetPts = budget === null ? 0 : budget >= 10000 ? 20 : budget >= 3000 ? 15 : budget >= 1000 ? 8 : 0;\n\n  const score = Math.max(0, Math.min(100,\n    (INTENT[ai.intent] ?? 0) + (URGENCY[ai.urgency] ?? 0) + (SIZE[ai.company_size] ?? 5) + budgetPts));\n\n  let route = 'nurture';\n  if (ai.intent === 'spam') route = 'discard';\n  else if (ai.intent === 'support_request') route = 'support';\n  else if (ai.intent === 'job_application') route = 'discard';\n  else if (score >= 70) route = 'hot';\n\n  return {\n    json: {\n      ...lead,\n      intent: ai.intent,\n      urgency: ai.urgency,\n      budget_usd: budget,\n      timeline: ai.timeline,\n      company_size: ai.company_size,\n      use_case: ai.use_case,\n      summary: ai.summary,\n      suggested_reply: ai.suggested_reply,\n      score,\n      route,\n    },\n  };\n});"
+      },
+      "id": "a7",
+      "name": "Score & Route",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1000,
+        -20
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "insert",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "leads"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "lead_id": "={{ $json.lead_id }}",
+            "received_at": "={{ $json.received_at }}",
+            "name": "={{ $json.name }}",
+            "email": "={{ $json.email }}",
+            "company": "={{ $json.company }}",
+            "source": "={{ $json.source }}",
+            "intent": "={{ $json.intent }}",
+            "urgency": "={{ $json.urgency }}",
+            "budget_usd": "={{ $json.budget_usd }}",
+            "timeline": "={{ $json.timeline }}",
+            "company_size": "={{ $json.company_size }}",
+            "use_case": "={{ $json.use_case }}",
+            "summary": "={{ $json.summary }}",
+            "suggested_reply": "={{ $json.suggested_reply }}",
+            "score": "={{ $json.score }}",
+            "route": "={{ $json.route }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "lead_id",
+              "displayName": "lead_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "received_at",
+              "displayName": "received_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "name",
+              "displayName": "name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "email",
+              "displayName": "email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "company",
+              "displayName": "company",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "source",
+              "displayName": "source",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "intent",
+              "displayName": "intent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "urgency",
+              "displayName": "urgency",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "budget_usd",
+              "displayName": "budget_usd",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "timeline",
+              "displayName": "timeline",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "company_size",
+              "displayName": "company_size",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "use_case",
+              "displayName": "use_case",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "summary",
+              "displayName": "summary",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "suggested_reply",
+              "displayName": "suggested_reply",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "score",
+              "displayName": "score",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "route",
+              "displayName": "route",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "a8",
+      "name": "CRM: Save Lead",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        1220,
+        -20
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"ok\": true, \"lead_id\": $('Score & Route').item.json.lead_id, \"intent\": $('Score & Route').item.json.intent, \"score\": $('Score & Route').item.json.score, \"route\": $('Score & Route').item.json.route, \"summary\": $('Score & Route').item.json.summary } }}",
+        "options": {}
+      },
+      "id": "a9",
+      "name": "Respond to Caller",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.4,
+      "position": [
+        1440,
+        -20
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "expression",
+        "numberOutputs": 4,
+        "output": "={{ ({ hot: 0, nurture: 1, support: 2, discard: 3 })[$json.route] }}"
+      },
+      "id": "a10",
+      "name": "Route",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        1660,
+        -20
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Slack-ready alert. Swap this node for a Slack / Teams / Gmail node in production.\nreturn $input.all().map(({ json: l }) => ({\n  json: {\n    channel: '#sales-hot-leads',\n    text: [\n      `🔥 *Hot lead (${l.score}/100)*: ${l.name}${l.company ? ' @ ' + l.company : ''}`,\n      `> ${l.summary}`,\n      `Budget: ${l.budget_usd ? '$' + l.budget_usd.toLocaleString('en-US') : 'not stated'} · Timeline: ${l.timeline} · Urgency: ${l.urgency}`,\n      `Draft reply ready. Email: ${l.email}`,\n    ].join('\\n'),\n    lead_id: l.lead_id,\n  },\n}));"
+      },
+      "id": "a11",
+      "name": "Hot Lead Alert",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1900,
+        -260
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Nurture-sequence enrolment payload. Swap for a Brevo / HubSpot / Mailchimp node in production.\nreturn $input.all().map(({ json: l }) => ({\n  json: { list: 'ai-services-nurture', email: l.email, first_name: l.name.split(' ')[0], tags: [l.intent, l.company_size], lead_id: l.lead_id },\n}));"
+      },
+      "id": "a12",
+      "name": "Nurture Sequence",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1900,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Help-desk ticket payload. Swap for a Zendesk / Jira / Freshdesk node in production.\nreturn $input.all().map(({ json: l }) => ({\n  json: {\n    subject: `[${l.urgency.toUpperCase()}] ${l.use_case}`,\n    requester: l.email,\n    priority: l.urgency === 'high' ? 'urgent' : 'normal',\n    description: l.message,\n    ai_summary: l.summary,\n    lead_id: l.lead_id,\n  },\n}));"
+      },
+      "id": "a13",
+      "name": "Support Ticket",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1900,
+        100
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "a14",
+      "name": "Discard (spam / jobs)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1900,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "width": 760,
+        "height": 330,
+        "color": 4,
+        "content": "## AI Lead Triage\n**Inbound lead → LLM qualification → deterministic scoring → CRM → routed follow-up**\n\n1. A website form or email parser POSTs `{name, email, company, message, source}` to the webhook.\n2. The LLM extracts structured fields (intent, urgency, budget, timeline, company size, summary, draft reply) against a strict JSON schema.\n3. **Code, not the LLM, scores and routes** (0–100): auditable, testable, cheap.\n4. Every lead is saved to the `leads` Data Table (swap for HubSpot / Sheets / Airtable).\n5. Caller gets an instant JSON response; then the lead is routed: 🔥 hot alert · 🌱 nurture · 🛠 support ticket · 🗑 discard."
+      },
+      "id": "n1",
+      "name": "Sticky: Overview",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -40,
+        -420
+      ]
+    },
+    {
+      "parameters": {
+        "width": 360,
+        "height": 150,
+        "color": 6,
+        "content": "### Model\nDefault: **Gemini Flash** (temperature 0). Swap for Claude, OpenAI or a local Ollama model by replacing this one sub-node, with no other changes."
+      },
+      "id": "n2",
+      "name": "Sticky: Model",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        560,
+        380
+      ]
+    }
+  ],
+  "connections": {
+    "Lead Intake (Webhook)": {
+      "main": [
+        [
+          {
+            "node": "Normalize Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize Input": {
+      "main": [
+        [
+          {
+            "node": "Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Valid?": {
+      "main": [
+        [
+          {
+            "node": "AI: Qualify Lead",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reject Invalid",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI: Qualify Lead",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI: Qualify Lead": {
+      "main": [
+        [
+          {
+            "node": "Score & Route",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Score & Route": {
+      "main": [
+        [
+          {
+            "node": "CRM: Save Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CRM: Save Lead": {
+      "main": [
+        [
+          {
+            "node": "Respond to Caller",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond to Caller": {
+      "main": [
+        [
+          {
+            "node": "Route",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route": {
+      "main": [
+        [
+          {
+            "node": "Hot Lead Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Nurture Sequence",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Support Ticket",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Discard (spam / jobs)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "active": false
+}

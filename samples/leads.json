@@ -1,0 +1,42 @@
+[
+  {
+    "expect": "hot",
+    "name": "Sarah Mitchell",
+    "email": "sarah.mitchell@northwindlogistics.com",
+    "company": "Northwind Logistics",
+    "source": "website-form",
+    "message": "Hi, we're a 400-person logistics company and our ops team spends hours every day reading carrier invoices and PDFs. We'd like an AI pipeline that extracts the data into our ERP and flags discrepancies. Budget is around $15k and we need a working pilot before the end of next month. Can we set up a call this week?"
+  },
+  {
+    "expect": "nurture",
+    "name": "Tom Becker",
+    "email": "tom@beckerdesign.studio",
+    "company": "Becker Design Studio",
+    "source": "website-form",
+    "message": "Hey, I run a small design studio and I've been curious about adding a chatbot to our website that answers questions about our services. No rush, just exploring options for next year. What would something like that roughly involve?"
+  },
+  {
+    "expect": "support",
+    "name": "Linh Nguyen",
+    "email": "linh.nguyen@acmeretail.vn",
+    "company": "Acme Retail",
+    "source": "email",
+    "message": "The RAG chatbot you delivered last month stopped answering since this morning and returns a 500 error for every question. Our customer service team relies on it, please help urgently."
+  },
+  {
+    "expect": "discard",
+    "name": "Mark",
+    "email": "growth@seo-rank-boost.biz",
+    "company": "",
+    "source": "email",
+    "message": "Dear website owner, we offer 500 high-authority backlinks for only $49! Rank #1 on Google in 7 days, guaranteed. Reply YES to get started with our limited offer."
+  },
+  {
+    "expect": "invalid",
+    "name": "No Email",
+    "email": "",
+    "company": "",
+    "source": "website-form",
+    "message": "This should be rejected with HTTP 400."
+  }
+]
